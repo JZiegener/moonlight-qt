@@ -235,6 +235,7 @@ FFmpegVideoDecoder::FFmpegVideoDecoder(bool testOnly)
       m_VideoFormat(0),
       m_NeedsSpsFixup(false),
       m_TestOnly(testOnly),
+      m_LogWindowStats(false),
       m_CurrentTestMode(TestMode::TestFrameOnly),
       m_DecoderThread(nullptr)
 {
@@ -493,6 +494,7 @@ bool FFmpegVideoDecoder::completeInitialization(const AVCodec* decoder, enum AVP
     m_StreamFps = params->frameRate;
     m_VideoFormat = params->videoFormat;
     m_CurrentTestMode = testMode;
+    m_LogWindowStats = testMode != TestMode::TestFrameOnly && StreamingPreferences::get()->logVideoStats;
 
     // Don't bother initializing Pacer if we're not actually going to render
     if (testMode != TestMode::TestFrameOnly) {
@@ -762,6 +764,7 @@ void FFmpegVideoDecoder::addVideoStats(VIDEO_STATS& src, VIDEO_STATS& dst)
     dst.totalFrames += src.totalFrames;
     dst.networkDroppedFrames += src.networkDroppedFrames;
     dst.pacerDroppedFrames += src.pacerDroppedFrames;
+    dst.receivedBytes += src.receivedBytes;
     dst.totalReassemblyTimeUs += src.totalReassemblyTimeUs;
     dst.totalDecodeTimeUs += src.totalDecodeTimeUs;
     dst.totalPacerTimeUs += src.totalPacerTimeUs;
@@ -986,6 +989,40 @@ void FFmpegVideoDecoder::logVideoStats(VIDEO_STATS& stats, const char* title)
                     "\n%s\n------------------\n%s",
                     title, videoStatsStr);
     }
+}
+
+void FFmpegVideoDecoder::logWindowStats(VIDEO_STATS& stats, uint64_t windowUs)
+{
+    // One machine-readable line per stats window. Counts are raw (not percentages)
+    // so they can be summed over any time range. Averages are 0 when their frame
+    // count is 0, and RTT is 0 when no estimate is available yet.
+    uint32_t rtt, rttVariance;
+    if (!LiGetEstimatedRttInfo(&rtt, &rttVariance)) {
+        rtt = 0;
+        rttVariance = 0;
+    }
+
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                "STATS window_us=%llu received=%u decoded=%u rendered=%u network_dropped=%u pacer_dropped=%u "
+                "rx_bytes=%llu rtt_ms=%u rtt_var_ms=%u "
+                "host_lat_min_ms=%.1f host_lat_avg_ms=%.1f host_lat_max_ms=%.1f "
+                "decode_avg_ms=%.2f queue_avg_ms=%.2f render_avg_ms=%.2f",
+                (unsigned long long)windowUs,
+                stats.receivedFrames,
+                stats.decodedFrames,
+                stats.renderedFrames,
+                stats.networkDroppedFrames,
+                stats.pacerDroppedFrames,
+                (unsigned long long)stats.receivedBytes,
+                rtt,
+                rttVariance,
+                (float)stats.minHostProcessingLatency / 10,
+                stats.framesWithHostProcessingLatency ?
+                    (float)stats.totalHostProcessingLatency / 10 / stats.framesWithHostProcessingLatency : 0,
+                (float)stats.maxHostProcessingLatency / 10,
+                stats.decodedFrames ? (double)(stats.totalDecodeTimeUs / 1000.0) / stats.decodedFrames : 0,
+                stats.renderedFrames ? (double)(stats.totalPacerTimeUs / 1000.0) / stats.renderedFrames : 0,
+                stats.renderedFrames ? (double)(stats.totalRenderTimeUs / 1000.0) / stats.renderedFrames : 0);
 }
 
 IFFmpegRenderer* FFmpegVideoDecoder::createHwAccelRenderer(const AVCodecHWConfig* hwDecodeCfg, PDECODER_PARAMETERS params, int pass)
@@ -2119,7 +2156,13 @@ int FFmpegVideoDecoder::submitDecodeUnit(PDECODE_UNIT du)
     m_BwTracker.AddBytes(du->fullLength);
 
     // Flip stats windows roughly every second
-    if (LiGetMicroseconds() > m_ActiveWndVideoStats.measurementStartUs + 1000000) {
+    uint64_t nowUs = LiGetMicroseconds();
+    if (nowUs > m_ActiveWndVideoStats.measurementStartUs + 1000000) {
+        // The window only flips when a frame arrives, so log its actual length
+        if (m_LogWindowStats) {
+            logWindowStats(m_ActiveWndVideoStats, nowUs - m_ActiveWndVideoStats.measurementStartUs);
+        }
+
         // Update overlay stats if it's enabled
         if (Session::get()->getOverlayManager().isOverlayEnabled(Overlay::OverlayDebug)) {
             VIDEO_STATS lastTwoWndStats = {};
@@ -2155,6 +2198,7 @@ int FFmpegVideoDecoder::submitDecodeUnit(PDECODE_UNIT du)
 
     m_ActiveWndVideoStats.receivedFrames++;
     m_ActiveWndVideoStats.totalFrames++;
+    m_ActiveWndVideoStats.receivedBytes += du->fullLength;
 
     int requiredBufferSize = du->fullLength;
     if (du->frameType == FRAME_TYPE_IDR) {
