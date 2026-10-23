@@ -366,6 +366,7 @@ void StreamCommandLineParser::parse(const QStringList &args, StreamingPreference
     parser.addToggleOption("swap-gamepad-buttons", "swap A/B and X/Y gamepad buttons (Nintendo-style)");
     parser.addToggleOption("keep-awake", "prevent display sleep while streaming");
     parser.addToggleOption("performance-overlay", "show performance overlay");
+    parser.addToggleOption("log-video-stats", "per-second video stats logging");
     parser.addToggleOption("hdr", "HDR streaming");
     parser.addToggleOption("yuv444", "YUV 4:4:4 sampling, if supported");
     parser.addChoiceOption("capture-system-keys", "capture system key combos", m_CaptureSysKeysModeMap.keys());
@@ -484,6 +485,9 @@ void StreamCommandLineParser::parse(const QStringList &args, StreamingPreference
 
     // Resolve --performance-overlay and --no-performance-overlay options
     preferences->showPerformanceOverlay = parser.getToggleOptionValue("performance-overlay", preferences->showPerformanceOverlay);
+
+    // Resolve --log-video-stats and --no-log-video-stats options
+    preferences->logVideoStats = parser.getToggleOptionValue("log-video-stats", preferences->logVideoStats);
 
     // Resolve --hdr and --no-hdr options
     preferences->enableHdr = parser.getToggleOptionValue("hdr", preferences->enableHdr);

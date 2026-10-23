@@ -1810,6 +1810,22 @@ Flickable {
                                   qsTr("You can toggle it at any time while streaming using Ctrl+Alt+Shift+S or Select+L1+R1+X.") + "\n\n" +
                                   qsTr("The performance overlay is not supported on Steam Link or Raspberry Pi.")
                 }
+
+                CheckBox {
+                    id: logVideoStats
+                    width: parent.width
+                    text: qsTr("Log performance stats while streaming")
+                    font.pointSize: 12
+                    checked: StreamingPreferences.logVideoStats
+                    onCheckedChanged: {
+                        StreamingPreferences.logVideoStats = checked
+                    }
+
+                    ToolTip.delay: 1000
+                    ToolTip.timeout: 5000
+                    ToolTip.visible: hovered
+                    ToolTip.text: qsTr("Write video stream stats to the log once per second, for diagnosing stutter after the fact.")
+                }
             }
         }
     }

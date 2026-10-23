@@ -54,6 +54,8 @@ private:
 
     void logVideoStats(VIDEO_STATS& stats, const char* title);
 
+    void logWindowStats(VIDEO_STATS& stats, uint64_t windowUs);
+
     void addVideoStats(VIDEO_STATS& src, VIDEO_STATS& dst);
 
     bool createFrontendRenderer(PDECODER_PARAMETERS params, bool useAlternateFrontend);
@@ -129,6 +131,7 @@ private:
     int m_VideoFormat;
     bool m_NeedsSpsFixup;
     bool m_TestOnly;
+    bool m_LogWindowStats;
     TestMode m_CurrentTestMode;
     SDL_Thread* m_DecoderThread;
     SDL_atomic_t m_DecoderThreadShouldQuit;
